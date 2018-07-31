@@ -5,6 +5,9 @@ import akka.actor.{ Actor, ActorLogging, Props }
 object Device {
   def props(groupId: String, deviceId: String): Props = Props(new Device(groupId, deviceId))
 
+  final case class RecordTemperature(id: Long, value: Double)
+  final case class TemperatureRecorded(id: Long)
+
   final case class ReadTemperature(id: Long)
   final case class RespondTemperature(id: Long, value: Option[Double])
 }
@@ -18,6 +21,11 @@ class Device(groupId: String, deviceId: String) extends Actor with ActorLogging 
   override def postStop(): Unit = log.info("Device actor {}-{} stopped", groupId, deviceId)
 
   override def receive: Receive = {
+    case RecordTemperature(id, value) => {
+      log.info("Recorded temperature reading {} with message id {}", value, id)
+      lastTemperatureReading = Some(value)
+      sender() ! TemperatureRecorded(id)
+    }
     case ReadTemperature(id) =>
       sender() ! RespondTemperature(id, lastTemperatureReading)
   }
