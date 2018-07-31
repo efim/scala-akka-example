@@ -75,6 +75,49 @@ class AkkaQuickstartSpec(_system: ActorSystem)
     probe.expectNoMessage(500.milliseconds)
   }
 
+  "DeviceGroup Actor on TrackRequest with incorrect ids" should "ignore request" in {
+    val probe = TestProbe()
+    val deviceActor = system.actorOf(DeviceGroup.props("group-id"))
 
+    deviceActor.tell(DeviceManager.RequestTrackDevice("wrong-group", "device-1"), probe.ref)
+    probe.expectNoMessage(500.milliseconds)
+  }
+
+  "DeviceGroup Actor on TrackRequest with correct ids" should "register Device Actor preserving requester as last sender for Device" in {
+    val probe = TestProbe()
+    val groupActor = system.actorOf(DeviceGroup.props("group-id"))
+
+    groupActor.tell(DeviceManager.RequestTrackDevice("group-id", "device-1"), probe.ref)
+    probe.expectMsg(DeviceManager.DeviceRegistered)
+    val deviceActor1 = probe.lastSender
+
+    groupActor.tell(DeviceManager.RequestTrackDevice("group-id", "device-2"), probe.ref)
+    probe.expectMsg(DeviceManager.DeviceRegistered)
+    val deviceActor2 = probe.lastSender
+
+    deviceActor1 should !== (deviceActor2)
+
+    // Check that the device actors are working
+    deviceActor1.tell(Device.RecordTemperature(id = 0, 1.0), probe.ref)
+    probe.expectMsg(Device.TemperatureRecorded(id = 0))
+    deviceActor2.tell(Device.RecordTemperature(id = 1, 2.0), probe.ref)
+    probe.expectMsg(Device.TemperatureRecorded(id = 1))
+  }
+
+  "DeviceGroup Actor on TrackRequest with correct duplicate ids" should "return forward to existing DeviceActor" in {
+    val probe = TestProbe()
+    val groupActor = system.actorOf(DeviceGroup.props("group-id"))
+
+    groupActor.tell(DeviceManager.RequestTrackDevice("group-id", "device-1"), probe.ref)
+    probe.expectMsg(DeviceManager.DeviceRegistered)
+    val deviceActor1 = probe.lastSender
+
+    groupActor.tell(DeviceManager.RequestTrackDevice("group-id", "device-1"), probe.ref)
+    probe.expectMsg(DeviceManager.DeviceRegistered)
+    val deviceActor2 = probe.lastSender
+
+    deviceActor1 should === (deviceActor2)
+
+  }
 
 }
