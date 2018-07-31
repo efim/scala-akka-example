@@ -1,5 +1,7 @@
 package example
 
+import scala.concurrent.duration._
+
 import org.scalatest.{ BeforeAndAfterAll, FlatSpecLike, Matchers }
 
 import akka.actor.{ ActorSystem }
@@ -49,7 +51,30 @@ class AkkaQuickstartSpec(_system: ActorSystem)
     val responce2 = probe.expectMsgType[Device.RespondTemperature]
     responce2.id should === (4)
     responce2.value should === (Some(30.1))
-
   }
+
+  "Device Actor on TrackRequest with correct ids" should "reply with DeviceRegistered" in {
+    val probe = TestProbe()
+    val deviceActor = system.actorOf(Device.props("group-1", "device-1"))
+
+    deviceActor.tell(DeviceManager.RequestTrackDevice("group-1", "device-1"), probe.ref)
+
+    probe.expectMsg(DeviceManager.DeviceRegistered)
+
+    probe.lastSender should === (deviceActor)
+  }
+
+  "Device Actor on TrackRequest with incorrect ids" should "ignore request" in {
+    val probe = TestProbe()
+    val deviceActor = system.actorOf(Device.props("group-1", "device-1"))
+
+    deviceActor.tell(DeviceManager.RequestTrackDevice("wrong-group", "device-1"), probe.ref)
+    probe.expectNoMessage(500.milliseconds)
+
+    deviceActor.tell(DeviceManager.RequestTrackDevice("group-1", "wrong-device"), probe.ref)
+    probe.expectNoMessage(500.milliseconds)
+  }
+
+
 
 }
