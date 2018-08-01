@@ -156,4 +156,67 @@ class AkkaQuickstartSpec(_system: ActorSystem)
     }
   }
 
+  "DeviceManager on TrackDevice request" should "register Device Actor preserving requester as last sender for Device" in {
+    val probe = TestProbe()
+    val groupActor = system.actorOf(DeviceManager.props())
+
+    groupActor.tell(DeviceManager.RequestTrackDevice("group-id", "device-1"), probe.ref)
+    probe.expectMsg(DeviceManager.DeviceRegistered)
+    val deviceActor1 = probe.lastSender
+
+    groupActor.tell(DeviceManager.RequestTrackDevice("group-id", "device-2"), probe.ref)
+    probe.expectMsg(DeviceManager.DeviceRegistered)
+    val deviceActor2 = probe.lastSender
+
+    deviceActor1 should !== (deviceActor2)
+
+    // Check that the device actors are working
+    deviceActor1.tell(Device.RecordTemperature(id = 0, 1.0), probe.ref)
+    probe.expectMsg(Device.TemperatureRecorded(id = 0))
+    deviceActor2.tell(Device.RecordTemperature(id = 1, 2.0), probe.ref)
+    probe.expectMsg(Device.TemperatureRecorded(id = 1))
+  }
+
+  "DeviceManager" should "be able to list devices" in {
+    val probe = TestProbe()
+    val managerActor = system.actorOf(DeviceManager.props())
+
+    //add devices:
+    managerActor.tell(DeviceManager.RequestTrackDevice("group-1", "device-1"), probe.ref)
+    probe.expectMsg(DeviceManager.DeviceRegistered)
+    managerActor.tell(DeviceManager.RequestTrackDevice("group-2", "device-1"), probe.ref)
+    probe.expectMsg(DeviceManager.DeviceRegistered)
+
+    managerActor.tell(DeviceManager.RequestGroupActorsList(requestId = 1), probe.ref)
+
+    val reply = probe.expectMsgType[DeviceManager.ReplyGroupActorsList]
+    assert(reply.groups.size === 2)
+  }
+
+  "DeviceManager" should "be able to list devices after one has stopped" in {
+    val probe = TestProbe()
+    val managerActor = system.actorOf(DeviceManager.props())
+
+    //add devices:
+    managerActor.tell(DeviceManager.RequestTrackDevice("group-1", "device-1"), probe.ref)
+    probe.expectMsg(DeviceManager.DeviceRegistered)
+
+    managerActor.tell(DeviceManager.RequestTrackDevice("group-id", "device-2"), probe.ref)
+    probe.expectMsg(DeviceManager.DeviceRegistered)
+
+    managerActor.tell(DeviceManager.RequestGroupActorsList(requestId = 1), probe.ref)
+    val reply = probe.expectMsgType[DeviceManager.ReplyGroupActorsList]
+    val toShutDown = reply.groups.head
+
+    probe.watch(toShutDown)
+    toShutDown ! PoisonPill
+    probe.expectTerminated(toShutDown)
+
+    probe.awaitAssert {
+      managerActor.tell(DeviceManager.RequestGroupActorsList(requestId = 1), probe.ref)
+      val reply = probe.expectMsgType[DeviceManager.ReplyGroupActorsList]
+
+      assert(reply.groups.size === 1)
+    }
+  }
 }
