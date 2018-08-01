@@ -1,11 +1,9 @@
 package example
 
 import scala.concurrent.duration._
-
-import org.scalatest.{ BeforeAndAfterAll, FlatSpecLike, Matchers }
-
-import akka.actor.{ ActorSystem }
-import akka.testkit.{ TestKit, TestProbe }
+import org.scalatest.{BeforeAndAfterAll, FlatSpecLike, Matchers}
+import akka.actor.{ActorSystem, PoisonPill}
+import akka.testkit.{TestKit, TestProbe}
 
 class AkkaQuickstartSpec(_system: ActorSystem)
   extends TestKit(_system)
@@ -117,7 +115,45 @@ class AkkaQuickstartSpec(_system: ActorSystem)
     val deviceActor2 = probe.lastSender
 
     deviceActor1 should === (deviceActor2)
+  }
 
+  "DeviceGroup" should "be able to list devices" in {
+    val probe = TestProbe()
+    val groupActor = system.actorOf(DeviceGroup.props("group-id"))
+
+    //add devices:
+    groupActor.tell(DeviceManager.RequestTrackDevice("group-id", "device-1"), probe.ref)
+    probe.expectMsg(DeviceManager.DeviceRegistered)
+    groupActor.tell(DeviceManager.RequestTrackDevice("group-id", "device-2"), probe.ref)
+    probe.expectMsg(DeviceManager.DeviceRegistered)
+
+    groupActor.tell(DeviceGroup.RequestDeviceList(requestId = 1), probe.ref)
+    probe.expectMsg(DeviceGroup.ReplyDeviceList(requestId = 1, Set("device-1", "device-2")))
+  }
+
+  "DeviceGroup" should "be able to list devices after one has stopped" in {
+    val probe = TestProbe()
+    val groupActor = system.actorOf(DeviceGroup.props("group-id"))
+
+    //add devices:
+    groupActor.tell(DeviceManager.RequestTrackDevice("group-id", "device-1"), probe.ref)
+    probe.expectMsg(DeviceManager.DeviceRegistered)
+    val toShutDown = probe.lastSender
+
+    groupActor.tell(DeviceManager.RequestTrackDevice("group-id", "device-2"), probe.ref)
+    probe.expectMsg(DeviceManager.DeviceRegistered)
+
+    groupActor.tell(DeviceGroup.RequestDeviceList(requestId = 1), probe.ref)
+    probe.expectMsg(DeviceGroup.ReplyDeviceList(requestId = 1, Set("device-1", "device-2")))
+
+    probe.watch(toShutDown)
+    toShutDown ! PoisonPill
+    probe.expectTerminated(toShutDown)
+
+    probe.awaitAssert {
+      groupActor.tell(DeviceGroup.RequestDeviceList(requestId = 1), probe.ref)
+      probe.expectMsg(DeviceGroup.ReplyDeviceList(requestId = 1, Set("device-2")))
+    }
   }
 
 }

@@ -1,9 +1,13 @@
 package example
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Terminated}
+import example.DeviceGroup.{ReplyDeviceList, RequestDeviceList}
 
 object DeviceGroup {
   def props(groupId: String): Props = Props(new DeviceGroup(groupId))
+
+  final case class RequestDeviceList(requestId: Long)
+  final case class ReplyDeviceList(requestId: Long, ids: Set[String])
 }
 
 class DeviceGroup(groupId: String) extends Actor with ActorLogging {
@@ -30,6 +34,9 @@ class DeviceGroup(groupId: String) extends Actor with ActorLogging {
     case DeviceManager.RequestTrackDevice(groupId, deviceId) =>
       log.warning("Ignoring TrackDevice Request for {}:{}. This actor is responsible for {}",
         groupId, deviceId, this.groupId)
+
+    case RequestDeviceList(requestId) =>
+      sender() ! ReplyDeviceList(requestId, deviceIdToActor.keySet)
 
     case Terminated(deviceActor) =>
       val deviceId = actorToDeviceId(deviceActor)
