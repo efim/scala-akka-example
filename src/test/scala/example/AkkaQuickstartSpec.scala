@@ -219,4 +219,44 @@ class AkkaQuickstartSpec(_system: ActorSystem)
       assert(reply.groups.size === 1)
     }
   }
+
+  "DeviceGroupQuery" should "report responces it receives" in {
+    val probe = TestProbe()
+
+    val device1 = TestProbe()
+    val device2 = TestProbe()
+
+    val queryActor = system.actorOf(DeviceGroupQuery.props(
+      requestId = 1,
+      requester = probe.ref,
+      deviceRefToId = Map(device1.ref -> "device-1" , device2.ref -> "device-2"),
+      timeout = 2.seconds
+    ))
+
+    queryActor.tell(DeviceGroup.RequestAllTemperatures(1), probe.ref)
+
+    device1.expectMsg(Device.ReadTemperature(0))
+    device2.expectMsg(Device.ReadTemperature(0))
+
+    queryActor.tell(Device.RespondTemperature(0, Some(20.1)), device1.ref)
+    queryActor.tell(Device.RespondTemperature(0, Some(29.2)), device2.ref)
+
+    probe.expectMsg(
+      DeviceGroup.ReplyAllTemperatures(
+        1,
+        Map(
+          "device-1" -> DeviceGroup.Temperature(20.1),
+          "device-2" -> DeviceGroup.Temperature(29.2)
+        )
+      )
+    )
+  }
+
+  /*
+  other tests for GroupQuery are:
+  - a device has to tempearture reading
+  - a device is stopped before responding
+  - a device responded and then has been stopped
+  - collection timeout before all readings
+   */
 }

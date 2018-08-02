@@ -26,15 +26,17 @@ class DeviceGroupQuery(
   val queryTimeoutTimer = context.system.scheduler.scheduleOnce(timeout, self, CollectionTimeout)
 
   override def preStart(): Unit =
+    log.info("GroupQuery {} is started", requestId)
     deviceRefToId.keysIterator.foreach { deviceActor =>
       context.watch(deviceActor)
       deviceActor ! Device.ReadTemperature(0)
     }
 
   override def postStop(): Unit =
+    log.info("GroupQuery {} is stopped", requestId)
     queryTimeoutTimer.cancel()
 
-  override def receive: Receive = Actor.emptyBehavior
+  override def receive: Receive = waitReply(Map.empty, deviceRefToId.keySet)
 
   def waitReply(
                  receivedReadings: Map[String, DeviceGroup.TemperatureReading],
@@ -48,7 +50,12 @@ class DeviceGroupQuery(
       receivedReading(sender(), reading, receivedReadings, waitingFor)
 
     case Terminated(actorRef) =>
-      receivedReading(sender(), DeviceGroup.DeviceNotAvailable, receivedReadings, waitingFor)
+      val deviceId = deviceRefToId(actorRef)
+      log.warning(
+        "GroupQuery {} received device timeout from {}",
+        requestId, deviceId
+      )
+      receivedReading(actorRef, DeviceGroup.DeviceNotAvailable, receivedReadings, waitingFor)
 
     case CollectionTimeout =>
       val timedoutReplies = waitingFor.map { actorRef =>
@@ -64,8 +71,13 @@ class DeviceGroupQuery(
                      receivedReadings: Map[String, DeviceGroup.TemperatureReading],
                      waitingFor: Set[ActorRef]
                      ) = {
+    val deviceId = deviceRefToId(deviceRef)
+    log.info(
+      "GroupQuery {} received reading {} from {}",
+      requestId, reading, deviceId
+    )
     context.unwatch(deviceRef)
-    val newReadings = receivedReadings + (deviceRefToId(deviceRef) -> reading)
+    val newReadings = receivedReadings + (deviceId -> reading)
     val newWaitingFor = waitingFor - deviceRef
 
     if(newWaitingFor.isEmpty) {
