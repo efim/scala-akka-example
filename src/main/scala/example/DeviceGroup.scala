@@ -1,7 +1,7 @@
 package example
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Terminated}
-import example.DeviceGroup.{ReplyDeviceList, RequestDeviceList}
+import scala.concurrent.duration._
 
 object DeviceGroup {
   def props(groupId: String): Props = Props(new DeviceGroup(groupId))
@@ -29,6 +29,14 @@ class DeviceGroup(groupId: String) extends Actor with ActorLogging {
   override def postStop(): Unit = log.info("DeviceGroup {} stopped", groupId)
 
   override def receive: Receive = {
+    case RequestAllTemperatures(requestId) =>
+      context.actorOf(DeviceGroupQuery.props(
+        requestId = requestId,
+        requester = sender(),
+        deviceRefToId = actorToDeviceId,
+        timeout = 5.seconds
+      ))
+
     case trackMsg @ DeviceManager.RequestTrackDevice(`groupId`, _) =>
       deviceIdToActor.get(trackMsg.deviceId) match {
         case Some(deviceActor) => deviceActor forward trackMsg
